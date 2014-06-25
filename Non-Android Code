@@ -1,0 +1,147 @@
+import org.opencv.core.Core;
+import org.opencv.core.CvType;
+import org.opencv.core.Mat;
+import org.opencv.core.Scalar;
+import org.opencv.core.MatOfPoint;
+import org.opencv.highgui.Highgui;
+import org.opencv.imgproc.*;
+import org.opencv.core.*;
+
+import java.awt.image.*;
+import java.awt.Graphics2D;
+
+import javax.imageio.*;
+import javax.imageio.ImageIO;
+
+import java.io.File;
+import java.util.*;
+
+class Image_Preprocessing {	
+	
+	/*public static Mat Deskew(Mat img, double angle) {
+		MatOfPoint2f points = new MatOfPoint2f(new Point(1, 1), new Point(5, 1), new Point(4,3), new Point(6,2));
+		points.
+		RotatedRect box = Imgproc.minAreaRect(points);
+		Mat rot_mat = Imgproc.getRotationMatrix2D(box.center, angle, 1);
+		Mat rotated = new Mat(img.rows(), img.cols(), img.type());
+		Imgproc.warpAffine(img, rotated, rot_mat, img.size(), Imgproc.INTER_CUBIC);
+		return rotated;
+	}*/
+	
+	public static Mat Convert_to_Binary(Mat source) {
+		Mat binary = new Mat(source.rows(), source.cols(), source.type());
+		Imgproc.threshold(source, binary, 0, 255, Imgproc.THRESH_OTSU);
+		return binary;
+	}
+	
+	public static void main(String[] args) {
+		
+		System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
+		
+		try {
+			
+			//Read in picture and create new matrices
+			BufferedImage original = ImageIO.read(new File("src/another_cropped.jpg"));
+			ImageIO.write(original, "png", new File("src/phone2.png"));
+			Mat source = Highgui.imread("src/phone2.png", Highgui.CV_LOAD_IMAGE_GRAYSCALE);
+			Mat binary = Convert_to_Binary(source);
+			Core.bitwise_not(binary, binary);
+			Mat edges = new Mat(source.rows(), source.cols(), source.type());
+			Mat lines = new Mat();
+			Mat drawn_lines = new Mat(source.rows(), source.cols(), source.type());
+
+			//List<MatOfPoint> edges = new ArrayList<MatOfPoint>();
+			/*Imgproc.findContours(binary, edges, new Mat(), Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE);
+			System.out.println(edges.size());
+			for (int i = 0; i < edges.size(); i++) {
+				double area = Imgproc.contourArea(edges.get(i));
+				if (area < 5000) continue;
+				Imgproc.drawContours(image, edges, i, new Scalar(150, 230, 45), 10);
+			}*/
+			
+			
+			
+			Imgproc.Canny(binary, edges, 50, 200);
+			//Highgui.imwrite("src/edges.jpg", edges);
+			Imgproc.HoughLines(edges, lines, 1, Math.PI/180, 300);
+			//System.out.println(source.width());
+			//Imgproc.HoughLinesP(edges, lines, 1, Math.PI/180, 300, source.width()/2.f, source.width());
+			
+			
+			System.out.println("Number of lines = " + lines.cols());
+			double skew_angle = 0;
+			
+			for( int i = 0; i < lines.cols(); i++ )
+			{
+			  //if (i%2 == 0) continue;
+			  //if (i%3 == 0) continue;
+			  double[] data = lines.get(0, i);
+			  double rho = data[0], theta = data[1];
+			  Point pt1 = new Point();
+			  Point pt2 = new Point();
+			  double a = Math.cos(theta), b = Math.sin(theta);
+			  skew_angle += a;
+			  System.out.println("rho: " + rho + "\t theta: " + theta);
+			  System.out.println("a: " + a + "\t b: " + b);
+			  double x0 = a*rho, y0 = b*rho;
+			  //System.out.println("x0 = " + x0 + "\ty0 = " + y0);
+			  pt1.x = Math.round(x0 + 1000*(-b));
+			  pt1.y = Math.round(y0 + 1000*(a));
+			  pt2.x = Math.round(x0 - 1000*(-b));
+			  pt2.y = Math.round(y0 - 1000*(a));
+			  Core.line( drawn_lines, pt1, pt2, new Scalar(255,0,0), 3);
+			}
+			
+			skew_angle /= lines.cols();
+			skew_angle *= -57.2957795;
+			System.out.println("Skew angle = " + skew_angle);
+			
+			double radians = Math.toRadians(359.9825476487);
+			double sin = Math.abs(Math.sin(radians));
+			double cos = Math.abs(Math.cos(radians));
+			
+			int newWidth = (int)(source.width()*cos + source.height()*sin);
+			int newHeight = (int)(source.width()*sin + source.height()*cos);
+			
+			int pivotx = newWidth/2;
+			int pivoty = newHeight/2;
+			
+			//Point center = new Point(pivotx, pivoty);
+			//System.out.println(center);
+			Size targetSize = new Size(newWidth, newHeight);
+			Size targetSize2 = new Size(1000, 1000);
+			System.out.println(targetSize);
+			
+			Mat targetMat = new Mat(targetSize, source.type());
+			
+			int offsetx = (newWidth - source.width())/2;
+			System.out.println(offsetx);
+			int offsety = (newHeight - source.height())/2;
+			System.out.println(offsety);
+			
+			//Mat rot_mat = Imgproc.getRotationMatrix2D(center, 90, 1);
+			
+			
+			/*Mat submat = targetMat.submat(offsety, offsety + source.height(), offsetx, offsetx + source.width());
+			binary.copyTo(submat);*/
+			
+			Point center = new Point(binary.cols()/2, binary.rows()/2);
+			Mat rotImage = Imgproc.getRotationMatrix2D(center, skew_angle, 1);
+			Mat warp_dst = new Mat();
+			Imgproc.warpAffine(binary, warp_dst, rotImage, binary.size(), Imgproc.INTER_CUBIC);
+			
+			//Mat warp_dst = Deskew(binary, 10);
+			
+			
+			Highgui.imwrite("src/new_measure7.png", edges);
+			
+
+			System.out.println("Success");
+			
+		} catch(Exception e) {
+			System.out.println(e);
+			System.out.println("Fail");
+		}
+		
+	}		
+}
